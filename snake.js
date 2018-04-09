@@ -1,61 +1,132 @@
-const base = require('./base')
-Object.getOwnPropertyNames(base).map(p => global[p] = base[p])
+const ORIGIN = Point2D( 0,  0)
 
-// Constants
-const NORTH = { x: 0, y:-1 }
-const SOUTH = { x: 0, y: 1 }
-const EAST  = { x: 1, y: 0 }
-const WEST  = { x:-1, y: 0 }
+const NORTH  = Point2D( 0, -1)
+const SOUTH  = Point2D( 0,  1)
+const EAST   = Point2D( 1,  0)
+const WEST   = Point2D(-1,  0)
 
-// Point operations
-const pointEq = p1 => p2 => p1.x == p2.x && p1.y == p2.y
+const APPLE  = Point2D(10,  2)
+const SNAKE  = [
+	Point2D(2, 2),
+	Point2D(3, 2),
+	Point2D(4, 2),
+	Point2D(5, 2),
+	Point2D(6, 2)]
 
-// Booleans
-const willEat   = state => pointEq(nextHead(state))(state.apple)
-const willCrash = state => state.snake.find(pointEq(nextHead(state)))
-const validMove = move => state =>
-  state.moves[0].x + move.x != 0 || state.moves[0].y + move.y != 0
+function SnakeGame(grid, direction)
+{
+	var apple, snake
+	
+	const initialize = () =>
+	{
+		apple = APPLE
+		snake = SNAKE
+		
+		direction.Reset()
+	};
+	
+	const isValid = (direction, move) => !direction.Add(move).Equals(ORIGIN);
 
-// Next values based on state
-const nextMoves = state => state.moves.length > 1 ? dropFirst(state.moves) : state.moves
-const nextApple = state => willEat(state) ? rndPos(state) : state.apple
-const nextHead  = state => state.snake.length == 0
-  ? { x: 2, y: 2 }
-  : {
-    x: mod(state.cols)(state.snake[0].x + state.moves[0].x),
-    y: mod(state.rows)(state.snake[0].y + state.moves[0].y)
-  }
-const nextSnake = state => willCrash(state)
-  ? []
-  : (willEat(state)
-    ? [nextHead(state)].concat(state.snake)
-    : [nextHead(state)].concat(dropLast(state.snake)))
+	initialize();
+	
+	return {
+		GetApple: () => apple,
+		GetSnake: () => snake,
+		
+		GetWidth: grid.GetWidth,
+		GetHeight: grid.GetHeight,
+		
+		Up: () => direction.Set(NORTH),
+		Left: () => direction.Set(WEST),
+		Right: () => direction.Set(EAST),
+		Down: () => direction.Set(SOUTH),
+		
+		MoveSnake: () => {
+			var nextHead = snake[snake.length -1].Add(direction.Get());
+			nextHead = grid.InGridCoordinate(nextHead);
+			
+			// eat apple
+			if(nextHead.Equals(apple))
+			{
+				snake.push(nextHead);
+				apple = Point2D(random(0, grid.GetWidth()), random(0, grid.GetHeight()))
+			}
+			
+			// eat snake (die)
+			else if(snake.find(point => point.Equals(nextHead)) != undefined)
+				initialize();
+			
+			// just move
+			else
+				snake = snake.concat(nextHead).slice(1);
+		},
+		
+		Restart: () => initialize()
+	}
+}
 
-// Randomness
-const rndPos = table => ({
-  x: rnd(0)(table.cols - 1),
-  y: rnd(0)(table.rows - 1)
-})
+function WrapGrid(height, width)
+{
+	return {
+		GetHeight: () => height,
+		GetWidth: () => width,
+		
+		InGridCoordinate: point =>
+			Point2D(
+				mod(point.x, width),
+				mod(point.y, height))
+	}
+}
 
-// Initial state
-const initialState = () => ({
-  cols:  20,
-  rows:  14,
-  moves: [EAST],
-  snake: [],
-  apple: { x: 16, y: 2 },
-})
+function BufferedMoves(initialDirection)
+{
+	var moves = []
+	var direction = initialDirection
+	
+	return {
+		Set: move => moves.push(move),
+		
+		Get: () => {
+			if(moves.length == 0)
+				return direction
 
-const next = spec({
-  rows:  prop('rows'),
-  cols:  prop('cols'),
-  moves: nextMoves,
-  snake: nextSnake,
-  apple: nextApple
-})
+			else
+			{
+				direction = moves.shift()
+				return direction
+			}
+		},
+		
+		Reset: () =>
+		{
+			direction = initialDirection
+			moves = []
+		}
+	}
+}
 
-const enqueue = (state, move) => validMove(move)(state)
-  ? merge(state)({ moves: state.moves.concat([move]) })
-  : state
+// below this point are extra implementations for some moving parts
 
-module.exports = { EAST, NORTH, SOUTH, WEST, initialState, enqueue, next, }
+function StopGrid(height, width)
+{
+	return {
+		GetHeight: () => height,
+		GetWidth: () => width,
+		
+		InGridCoordinate: point =>
+			Point2D(
+				max(0, min(point.x, width)),
+				max(0, min(point.y, height)))
+	}
+}
+
+function DirectMoves(initialDirection)
+{
+	var direction = initialDirection
+	
+	return {
+		Set: move => direction = move,
+		Get: () => direction,
+		Reset: () => direction = initialDirection
+	}
+}
